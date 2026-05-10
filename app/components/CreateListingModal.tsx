@@ -1,21 +1,56 @@
 "use client";
-import React, { useState } from 'react';
-import { Music, Mic2, FileText, Upload, ShieldCheck } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Music, Mic2, FileText, Upload, ShieldCheck, Loader2, CheckCircle } from 'lucide-react';
 import Modal from '../Modal';
+import { uploadFile } from '../actions/upload';
 
 // --- NEW LISTING MODAL ---
 export const CreateListingModal = ({ isOpen, onClose, onPublish }: any) => {
     const [step, setStep] = useState(1);
     const [type, setType] = useState('asset'); // asset, service, knowledge
-    const [formData, setFormData] = useState({ title: '', price: '', category: 'Worship Pads', description: '', deliveryTime: '24 Hours' });
+    const [formData, setFormData] = useState({ title: '', price: '', category: 'Worship Pads', description: '', deliveryTime: '24 Hours', imageUrl: '', fileUrl: '', fileName: '' });
     const [theologyCheck, setTheologyCheck] = useState({
       orthodox: false,
       original: false,
       noAiSermon: false
     });
-  
+    const [uploading, setUploading] = useState(false);
+    const [uploadError, setUploadError] = useState('');
+    const fileInputRef = useRef<HTMLInputElement>(null);
+ 
     const isTheologyPassed = theologyCheck.orthodox && theologyCheck.original && (type !== 'knowledge' || theologyCheck.noAiSermon);
-  
+ 
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setUploading(true);
+      setUploadError('');
+
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('bucket', type === 'asset' ? 'product-files' : 'product-images');
+
+      try {
+        const result = await uploadFile(fd);
+        if (result.error) {
+          setUploadError(result.error);
+        } else if (result.data) {
+          const isImage = file.type.startsWith('image/');
+          setFormData(prev => ({
+            ...prev,
+            imageUrl: isImage ? result.data!.url : prev.imageUrl,
+            fileUrl: !isImage ? result.data!.url : prev.fileUrl,
+            fileName: file.name,
+          }));
+        }
+      } catch {
+        setUploadError('Upload failed. Please try again.');
+      } finally {
+        setUploading(false);
+      }
+    };
+
     const handlePublish = async () => {
       // Prepare product data for server action
       const productData = {
@@ -24,9 +59,10 @@ export const CreateListingModal = ({ isOpen, onClose, onPublish }: any) => {
         title: formData.title || 'Untitled Listing',
         price: parseFloat(formData.price) || 0,
         description: formData.description || '',
-        image: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=1000&auto=format&fit=crop', // Placeholder
+        image: formData.imageUrl || 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=1000&auto=format&fit=crop',
         deliveryTime: type === 'service' ? formData.deliveryTime : null,
-        fileSize: type === 'asset' ? '25 MB' : null
+        fileSize: formData.fileName || (type === 'asset' ? 'Upload your file' : null),
+        fileUrl: formData.fileUrl || null,
       };
       
       const result = await onPublish(productData);
@@ -35,7 +71,7 @@ export const CreateListingModal = ({ isOpen, onClose, onPublish }: any) => {
       if (result && !result.error) {
         onClose();
         setStep(1);
-        setFormData({ title: '', price: '', category: 'Worship Pads', description: '', deliveryTime: '24 Hours' });
+        setFormData({ title: '', price: '', category: 'Worship Pads', description: '', deliveryTime: '24 Hours', imageUrl: '', fileUrl: '', fileName: '' });
         setTheologyCheck({ orthodox: false, original: false, noAiSermon: false });
         // Navigate to marketplace to see the new product
         window.location.href = '/marketplace';
@@ -146,10 +182,40 @@ export const CreateListingModal = ({ isOpen, onClose, onPublish }: any) => {
   
                <div className="p-4 bg-slate-900/50 border border-dashed border-white/20 rounded-xl">
                  {type === 'asset' || type === 'knowledge' ? (
-                   <div className="text-center py-4 cursor-pointer hover:bg-white/5 transition-colors rounded-lg">
-                      <Upload className="mx-auto text-slate-500 mb-2" />
-                      <div className="text-sm font-medium text-white">Upload File</div>
-                      <div className="text-xs text-slate-500">ZIP, MP3, PDF (Max 5GB)</div>
+                   <div>
+                      {formData.fileUrl ? (
+                        <div className="flex items-center gap-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                          <CheckCircle size={18} className="text-emerald-400" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-white truncate">{formData.fileName || 'File uploaded'}</div>
+                            <div className="text-xs text-emerald-400">Upload successful</div>
+                          </div>
+                          <button onClick={() => setFormData({...formData, fileUrl: '', fileName: ''})} className="text-xs text-slate-400 hover:text-white">Remove</button>
+                        </div>
+                      ) : (
+                        <div
+                          className="text-center py-6 cursor-pointer hover:bg-white/5 transition-colors rounded-lg"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          {uploading ? (
+                            <Loader2 className="mx-auto text-indigo-400 mb-2 animate-spin" size={24} />
+                          ) : (
+                            <Upload className="mx-auto text-slate-500 mb-2" size={24} />
+                          )}
+                          <div className="text-sm font-medium text-white">
+                            {uploading ? 'Uploading...' : 'Upload File'}
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">ZIP, MP3, PDF, WAV (Max 50MB)</div>
+                          {uploadError && <div className="text-xs text-red-400 mt-1">{uploadError}</div>}
+                        </div>
+                      )}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        accept={type === 'knowledge' ? '.pdf,.doc,.docx,.txt,.md' : '.zip,.mp3,.wav,.pdf'}
+                        onChange={handleFileUpload}
+                      />
                    </div>
                  ) : (
                    <div>
