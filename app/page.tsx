@@ -1,10 +1,44 @@
 "use client"
-import { useContext } from "react";
+import { useContext, useEffect } from "react";
 import { AppStateContext } from "./StateProvider";
 import Link from "next/link";
+import { createClient } from "../lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 export default function Page() {
     const context = useContext(AppStateContext);
+    const router = useRouter();
+
+    // Handle email confirmation code from URL
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            
+            if (code) {
+                // Check if Supabase is configured
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+                const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+                
+                if (!supabaseUrl || !supabaseAnonKey) {
+                    console.warn('Supabase not configured. Email confirmation skipped.');
+                    return;
+                }
+                
+                const supabase = createClient();
+                supabase.auth.exchangeCodeForSession(code).then(({ error }: { error: any }) => {
+                    if (!error) {
+                        // Successfully confirmed email, redirect to home without code
+                        router.replace('/');
+                    } else {
+                        console.error('Error exchanging code for session:', error);
+                    }
+                }).catch((error: any) => {
+                    console.error('Error during email confirmation:', error);
+                });
+            }
+        }
+    }, [router]);
 
     if (!context) {
         return <div>Loading...</div>;
@@ -51,11 +85,11 @@ export default function Page() {
                     </button>
                 </div>
 
-                <div className="mt-16 flex items-center justify-center gap-8 md:gap-16 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-                    <span className="text-xl font-black font-serif">Electronic Worship</span>
-                    <span className="text-xl font-bold tracking-tighter">The Sunday Team</span>
-                    <span className="text-xl font-medium tracking-wide">HILLSONG</span>
-                    <span className="text-xl font-bold font-mono">BETHEL</span>
+                <div className="mt-16 flex flex-wrap items-center justify-center gap-4 md:gap-8 lg:gap-16 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
+                    <span className="text-base md:text-xl font-black font-serif">Electronic Worship</span>
+                    <span className="text-base md:text-xl font-bold tracking-tighter">The Sunday Team</span>
+                    <span className="text-base md:text-xl font-medium tracking-wide">HILLSONG</span>
+                    <span className="text-base md:text-xl font-bold font-mono">BETHEL</span>
                 </div>
             </div>
         </div>

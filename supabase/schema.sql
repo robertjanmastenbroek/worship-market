@@ -333,8 +333,26 @@ CREATE TRIGGER update_requests_updated_at BEFORE UPDATE ON requests FOR EACH ROW
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, full_name)
-  VALUES (new.id, new.email, new.raw_user_meta_data->>'full_name');
+  INSERT INTO public.profiles (
+    id, 
+    email, 
+    full_name,
+    role,
+    statement_of_faith_agreed,
+    statement_of_faith_agreed_at
+  )
+  VALUES (
+    new.id, 
+    new.email, 
+    new.raw_user_meta_data->>'full_name',
+    COALESCE((new.raw_user_meta_data->>'role')::user_role, 'leader'::user_role),
+    COALESCE((new.raw_user_meta_data->>'statement_of_faith_agreed')::boolean, false),
+    CASE 
+      WHEN (new.raw_user_meta_data->>'statement_of_faith_agreed')::boolean = true 
+      THEN NOW() 
+      ELSE NULL 
+    END
+  );
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

@@ -20,26 +20,112 @@ export const AppStateProvider = ({ children }: { children: React.ReactNode }) =>
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [user, setUser] = useState<any>(null);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    
     const supabase = createClient();
 
-    // On mount, check for session
+    // Helper function to transform database product to UI format
+    const transformProduct = (dbProduct: any) => {
+        const profile = dbProduct.profiles || {};
+        return {
+            ...dbProduct,
+            id: dbProduct.id,
+            image: dbProduct.image_url || 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=1000&auto=format&fit=crop',
+            audioUrl: dbProduct.audio_url || null,
+            author: profile.full_name || profile.email || 'Unknown',
+            authorVerified: profile.verified || false,
+            reviews: dbProduct.review_count || 0,
+            tags: dbProduct.tags || [],
+        };
+    };
+
+    // Helper function to fetch and transform products
+    const fetchAndTransformProducts = async () => {
+        // Check if Supabase is properly configured
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        
+        if (!supabaseUrl || !supabaseAnonKey || !supabase?.from) {
+            // Use mock data if Supabase isn't configured
+            return;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('products')
+                .select(`
+                    *,
+                    profiles!products_seller_id_fkey (
+                        id,
+                        email,
+                        full_name,
+                        role,
+                        verified
+                    )
+                `)
+                .eq('active', true)
+                .order('created_at', { ascending: false });
+
+            if (!error && data) {
+                const transformedProducts = data.map(transformProduct);
+                setProducts(transformedProducts.length > 0 ? transformedProducts : INITIAL_PRODUCTS);
+            }
+        } catch (error) {
+            console.error('Error fetching products:', error);
+            // Continue with mock data on error
+        }
+    };
+
+    // On mount, check for session and fetch products
     useEffect(() => {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        
+        if (!supabaseUrl || !supabaseAnonKey || !supabase?.auth) {
+            // Skip auth check if Supabase isn't configured
+            return;
+        }
+
         const getSession = async () => {
-            const { data, error } = await supabase.auth.getUser();
-            if (data?.user) {
-                setUser({
-                    name: data.user.email,
-                    role: data.user.user_metadata?.role || 'leader',
-                    verified: !!data.user.user_metadata?.statement_of_faith_agreed,
-                });
-            } else {
+            try {
+                const { data, error } = await supabase.auth.getUser();
+                if (data?.user) {
+                    setUser({
+                        name: data.user.email,
+                        role: data.user.user_metadata?.role || 'leader',
+                        verified: !!data.user.user_metadata?.statement_of_faith_agreed,
+                    });
+                } else {
+                    setUser(null);
+                }
+            } catch (error) {
+                console.error('Error getting session:', error);
                 setUser(null);
             }
         };
         getSession();
         // Listen for auth changes
-        const { data: listener } = supabase.auth.onAuthStateChange(() => getSession());
-        return () => { listener?.subscription.unsubscribe(); };
+        let listener: any = null;
+        try {
+            if (supabase?.auth) {
+                const result = supabase.auth.onAuthStateChange(() => getSession());
+                listener = result?.data;
+            }
+        } catch (error) {
+            console.error('Error setting up auth listener:', error);
+        }
+        
+        return () => {
+            if (listener?.subscription) {
+                listener.subscription.unsubscribe();
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Fetch products from Supabase on mount
+    useEffect(() => {
+        fetchAndTransformProducts();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -96,9 +182,46 @@ export const AppStateProvider = ({ children }: { children: React.ReactNode }) =>
         setCart([]);
     };
 
-    const handlePublishListing = (newProduct: any) => {
-        setProducts([newProduct, ...products]);
-        setView('marketplace'); // Redirect to see your new baby
+    const handlePublishListing = async (productData: any) => {
+        // Product data comes from CreateListingModal
+        // It needs to be transformed to match the database schema
+        try {
+            const dbProductData = {
+                type: productData.type,
+                category: productData.category,
+                title: productData.title,
+                description: productData.description || '',
+                price: productData.price,
+                image_url: productData.image || null,
+                delivery_time: productData.deliveryTime || null,
+                file_size: productData.fileSize || null,
+            };
+
+            // Call API route to avoid bundling issues (following LAYOUT_INTEGRITY rules)
+            const response = await fetch('/api/products', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dbProductData),
+            });
+
+            const result = await response.json();
+            
+            if (result.error) {
+                console.error('Error creating product:', result.error);
+                alert('Error creating product: ' + result.error);
+                return { error: result.error };
+            }
+
+            // Refresh products list to show the new product
+            await fetchAndTransformProducts();
+            
+            // Return success - the modal will close itself
+            return { success: true };
+        } catch (error) {
+            console.error('Error creating product:', error);
+            alert('Error creating product. Please try again.');
+            return { error: 'Failed to create product' };
+        }
     };
 
     const state = {

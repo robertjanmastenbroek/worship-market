@@ -16,28 +16,30 @@ export const CreateListingModal = ({ isOpen, onClose, onPublish }: any) => {
   
     const isTheologyPassed = theologyCheck.orthodox && theologyCheck.original && (type !== 'knowledge' || theologyCheck.noAiSermon);
   
-    const handlePublish = () => {
-      // Create new product object
-      const newProduct = {
-        id: Date.now(),
+    const handlePublish = async () => {
+      // Prepare product data for server action
+      const productData = {
         type,
         category: formData.category,
         title: formData.title || 'Untitled Listing',
         price: parseFloat(formData.price) || 0,
-        author: 'Robert-Jan (You)',
-        authorVerified: true,
-        rating: 0,
-        reviews: 0,
+        description: formData.description || '',
         image: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?q=80&w=1000&auto=format&fit=crop', // Placeholder
-        description: formData.description,
         deliveryTime: type === 'service' ? formData.deliveryTime : null,
         fileSize: type === 'asset' ? '25 MB' : null
       };
       
-      onPublish(newProduct);
-      onClose();
-      setStep(1);
-      setFormData({ title: '', price: '', category: 'Worship Pads', description: '', deliveryTime: '24 Hours' });
+      const result = await onPublish(productData);
+      
+      // Only close modal and reset form if creation was successful
+      if (result && !result.error) {
+        onClose();
+        setStep(1);
+        setFormData({ title: '', price: '', category: 'Worship Pads', description: '', deliveryTime: '24 Hours' });
+        setTheologyCheck({ orthodox: false, original: false, noAiSermon: false });
+        // Navigate to marketplace to see the new product
+        window.location.href = '/marketplace';
+      }
     };
   
     if (!isOpen) return null;
@@ -104,7 +106,7 @@ export const CreateListingModal = ({ isOpen, onClose, onPublish }: any) => {
                  />
                </div>
   
-               <div className="grid grid-cols-2 gap-4">
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                  <div>
                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Price ($)</label>
                    <input 
