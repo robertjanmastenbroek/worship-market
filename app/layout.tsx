@@ -4,6 +4,7 @@ import "./globals.css";
 import { AppStateProvider } from "./StateProvider";
 import Navbar from "./components/Navbar";
 import { ModalsWrapper } from "./components/ModalsWrapper";
+import SupportChat from "./components/SupportChat";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -34,6 +35,7 @@ export default function RootLayout({
           <Navbar />
           {children}
           <ModalsWrapper />
+          <SupportChat />
         </AppStateProvider>
       </body>
     </html>
